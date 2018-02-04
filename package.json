@@ -1,0 +1,18 @@
+{
+  "name": "LinkBox",
+  "version": "1.0.0",
+  "description": "Cross-platform OneTab Alternative",
+  "main": "app.js",
+  "author": "Flawid D'Souza",
+  "license": "MIT",
+  "dependencies": {
+    "bcrypt": "^1.0.3",
+    "body-parser": "^1.18.2",
+    "dotenv": "^4.0.0",
+    "express": "^4.16.2",
+    "jsonwebtoken": "^8.1.1",
+    "pg-promise": "^7.4.1",
+    "winston": "^2.4.0",
+    "ws": "^4.0.0"
+  }
+}
