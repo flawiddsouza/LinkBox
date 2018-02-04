@@ -213,7 +213,6 @@ async function deleteLink(payload, client) {
             })
             // housekeeping by deleting linkGroup of the just deleted link if there's no other links associated to it
             var linkGroupId = result.rows[0].link_group_id
-            console.log(linkGroupId)
             var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1)', [linkGroupId])
             if(!linkGroupAssociatedLinks.rows[0].exists) {
                 db.none('DELETE from link_groups WHERE id = $1', [linkGroupId])

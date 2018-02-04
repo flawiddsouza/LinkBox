@@ -150,12 +150,18 @@ var app = new Vue({
                     <div class="link-group-header">
                         <div class="title" v-if="linkGroup.linkGroup.title">{{ linkGroup.linkGroup.title }}</div>
                         <div class="count">{{ linkGroup.links.length }} Links</div>
-                        <div class="creation-datetime">Created {{ linkGroup.linkGroup.created_at }}</div>
+                        <div>
+                            <div class="creation-datetime">Created {{ linkGroup.linkGroup.created_at }}</div>
+                            <div class="actions">
+                                <a @click="openAllInGroup(linkGroup)">Restore All</a>
+                                <a @click="deleteAllInGroup(linkGroup)">Delete All</a>
+                            </div>
+                        </div>
                     </div>
                     <div v-for="link in linkGroup.links" class="link-holder">
-                        <img src="images/cross.png" @click="deleteLink(link.id, $event)" class="delete-link">
+                        <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
                         <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
-                        <a :href="link.link" target="_blank" @click="deleteLink(link.id, $event)">{{ link.title ? link.title : link.link }}</a>
+                        <a :href="link.link" target="_blank" @click="deleteLink(link.id)">{{ link.title ? link.title : link.link }}</a>
                     </div>
                 </div>
             </main>
@@ -207,9 +213,7 @@ var app = new Vue({
         }
     },
     methods: {
-        deleteLink(id, event) {
-            // event.target.parentElement.style.display = 'none' // we hide the element immediately after deleteLink is clicked, so that it doesn't get clicked on multiple times when the rest of the clicks are being processed, creating an unending loop of getLinks()
-            // setTimeout(() => event.target.parentElement.style.display = 'block', 1000)
+        deleteLink(id) {
             deleteLink(id)
         },
         switchToRegistrationForm() {
@@ -280,6 +284,27 @@ var app = new Vue({
         logout() {
             localStorage.clear()
             getLinks()
+        },
+        openAllInGroup(linkGroup) {
+            var popupBlocked = false
+            linkGroup.links.forEach(linkObj => {
+                var popup = window.open(linkObj.link)
+                if(popup) {
+                    this.deleteLink(linkObj.id)
+                } else {
+                    popupBlocked = true
+                }
+            })
+            if(popupBlocked) {
+                alert("Please allow popups for this site in your site settings")
+            }
+        },
+        deleteAllInGroup(linkGroup) {
+            if(confirm("Are you sure?")) {
+                linkGroup.links.forEach(linkObj => {
+                    this.deleteLink(linkObj.id)
+                })
+            }
         }
     },
 })

@@ -60,10 +60,14 @@ header .logout {
     margin-right: 1em;
 }
 
-.link-group-header .creation-datetime {
+.link-group-header .creation-datetime, .link-group-header .actions {
     font-size: 0.688em;
     font-weight: 400;
     color: #888;
+}
+
+.link-group-header .actions a {
+    margin-right: 1em;
 }
 
 .link-holder {
