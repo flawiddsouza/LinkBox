@@ -26,6 +26,7 @@ ws.addEventListener('message', e => {
                         if(linkGroup.links.length == 0) { // if a linkGroup is empty
                             app.$store.state.links.splice(index, 1) // remove it from the array
                         }
+                        app.$store.commit('updateLinkCount', app.$store.state.linkCount - 1)
                     })
                     break
                 case 'link-already-deleted':
