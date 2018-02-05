@@ -179,8 +179,8 @@ async function addLink(payload) {
     try {
         var linkGroupId = null
         try {
-            var latestLinkGroup = await db.one('SELECT id FROM link_groups ORDER BY id DESC LIMIT 1')
-            linkGroupId = latestLinkGroup.id
+            var lastAddedLink = await db.one('SELECT link_group_id FROM links WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [authUser.id])
+            linkGroupId = lastAddedLink.link_group_id
         } catch(error) {
             if(error.name === 'QueryResultError') {
                 var newLinkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [authUser.id])
