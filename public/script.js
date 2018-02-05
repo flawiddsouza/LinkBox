@@ -151,7 +151,7 @@ var app = new Vue({
                         <div class="title" v-if="linkGroup.linkGroup.title">{{ linkGroup.linkGroup.title }}</div>
                         <div class="count">{{ linkGroup.links.length }} Links</div>
                         <div>
-                            <div class="creation-datetime">Created {{ linkGroup.linkGroup.created_at }}</div>
+                            <div class="creation-datetime">Created {{ momentDateTime(linkGroup.linkGroup.created_at) }}</div>
                             <div class="actions">
                                 <a @click="openAllInGroup(linkGroup)">Restore All</a>
                                 <a @click="deleteAllInGroup(linkGroup)">Delete All</a>
@@ -305,6 +305,9 @@ var app = new Vue({
                     this.deleteLink(linkObj.id)
                 })
             }
+        },
+        momentDateTime(dateTime) {
+            return moment.utc(dateTime).local().format('DD-MMM-YY h:mm A')
         }
     },
 })
