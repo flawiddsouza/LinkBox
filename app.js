@@ -177,8 +177,19 @@ function getLinks(client) {
 // payload == linkObject
 async function addLink(payload) {
     try {
-        var linkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [authUser.id])
-        await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroup.id, authUser.id])
+        var linkGroupId = null
+        try {
+            var latestLinkGroup = await db.one('SELECT id FROM link_groups ORDER BY id DESC LIMIT 1')
+            linkGroupId = latestLinkGroup.id
+        } catch(error) {
+            if(error.name === 'QueryResultError') {
+                var newLinkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [authUser.id])
+                linkGroupId = newLinkGroup.id
+            } else {
+                winston.error(error)
+            }
+        }
+        await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, authUser.id])
         authenticatedClients[authUser.id].forEach(client => {
             client.sendJSON({ event: 'link-added' })
         })
