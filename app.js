@@ -1,14 +1,14 @@
+const path = require('path')
+
+require('dotenv').config({ path: path.join(__dirname, '.env') })
+
 const winston = require('winston')
-winston.level = 'info'
+winston.level = process.env.LOG_LEVEL
 // { error: 0, warn: 1, info: 2, verbose: 3, debug: 4, silly: 5 }
 // setting level to error will show only winston.error()
 // setting level to info will show winston.info(), winston.warn() and winston. error()
 // setting level to debug will show winston.info(), winston.verbose(), winston.info(), winston.warn() and winston.error()
 // you get the idea
-
-const path = require('path')
-
-require('dotenv').config({ path: path.join(__dirname, '.env') })
 
 const db = require('./db')
 
