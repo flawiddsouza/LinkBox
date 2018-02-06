@@ -106,6 +106,10 @@ function deleteLink(id) {
     wsSendJSON({ method: 'delete-link', payload: id })
 }
 
+function changeLinkGroup(linkId, oldLinkGroupId, newLinkGroupId) {
+    wsSendJSON({ method: 'change-link-group', payload: { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId } })   
+}
+
 function OnWebSocketOpen() {
     getLinks()
 }
@@ -158,10 +162,12 @@ var app = new Vue({
                             </div>
                         </div>
                     </div>
-                    <div v-for="link in linkGroup.links" class="link-holder">
-                        <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
-                        <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
-                        <a :href="link.link" target="_blank" @click="deleteLink(link.id)">{{ link.title ? link.title : link.link }}</a>
+                    <div class="drag-box" @dragover.prevent @drop="onDrop(linkGroup, $event)">
+                        <div v-for="link in linkGroup.links" class="link-holder" draggable="true" @dragstart="onDrag(link, $event)">
+                            <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
+                            <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
+                            <a :href="link.link" target="_blank" @click="deleteLink(link.id)">{{ link.title ? link.title : link.link }}</a>
+                        </div>
                     </div>
                 </div>
             </main>
@@ -308,6 +314,25 @@ var app = new Vue({
         },
         momentDateTime(dateTime) {
             return moment.utc(dateTime).local().format('DD-MMM-YY h:mm A')
+        },
+        onDrag(link, event) {
+            event.dataTransfer.setData('link', JSON.stringify(link))
+        },
+        onDrop(linkGroup, event) {
+            var link = JSON.parse(event.dataTransfer.getData('link'))
+            changeLinkGroup(link.id, link.link_group_id, linkGroup.linkGroup.id)
+            if(linkGroup.linkGroup.id !== link.link_group_id) { // ensures the link isn't added back to the same group as it was dragged from
+                this.$store.state.links.forEach((linkGroup, index) => {
+                    if(linkGroup.linkGroup.id == link.link_group_id) {
+                        linkGroup.links = linkGroup.links.filter(aLink => aLink.id !== link.id)
+                    }
+                    if(linkGroup.links.length == 0) { // if a linkGroup is empty
+                        app.$store.state.links.splice(index, 1) // remove it from the array
+                    }
+                })
+                link.link_group_id = linkGroup.linkGroup.id
+                linkGroup.links.unshift(link)
+            }
         }
     },
 })

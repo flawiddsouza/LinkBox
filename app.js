@@ -87,6 +87,10 @@ wss.on('connection', client => {
                             winston.info({ method: 'delete-link', payload: payload, client: client.id })
                             deleteLink(payload, client)
                             break
+                        case 'change-link-group':
+                            winston.info({ method: 'change-link-group', payload: payload, client: client.id })
+                            changeLinkGroup(payload, client)
+                            break
                     }
                 }
             } else {
@@ -174,7 +178,7 @@ function getLinks(client) {
     .catch(error => winston.error(error.stack))
 }
 
-// payload == linkObject
+// payload == linkObject { title: title, link: link }
 async function addLink(payload) {
     try {
         var linkGroupId = null
@@ -198,7 +202,7 @@ async function addLink(payload) {
     }
 }
 
-// payload == linkArray
+// payload == linkObject Array
 async function addLinks(payload) {
     try {
         var linkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [authUser.id])
@@ -233,6 +237,25 @@ async function deleteLink(payload, client) {
             winston.info({ event: 'link-already-deleted', payload: payload, client: client.id })
             client.sendJSON({ event: 'link-already-deleted', payload: payload })
         }
+    } catch(error) {
+        winston.error(error)
+    }
+}
+
+// payload == { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId }
+async function changeLinkGroup(payload, client) {
+    try {
+        await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [payload.newLinkGroupId, payload.linkId, authUser.id])
+        authenticatedClients[authUser.id].forEach(client => {
+            winston.info({ event: 'link-updated', payload: payload.linkId, client: client.id })
+            client.sendJSON({ event: 'link-updated', payload: payload.linkId })
+        })
+        // housekeeping by deleting linkGroup of the just updated link if there's no other links associated to it
+        var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1)', [payload.oldLinkGroupId])
+        if(!linkGroupAssociatedLinks.rows[0].exists) {
+            db.none('DELETE from link_groups WHERE id = $1', [payload.oldLinkGroupId])
+        }
+        // housekeeping by deleting linkGroup of the just updated link if there's no other links associated to it
     } catch(error) {
         winston.error(error)
     }
