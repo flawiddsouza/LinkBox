@@ -47,3 +47,15 @@ CREATE TABLE IF NOT EXISTS links (
 
 DROP TRIGGER IF EXISTS links_updated_at_modtime ON links;
 CREATE TRIGGER links_updated_at_modtime BEFORE UPDATE ON links FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id SERIAL,
+    api_key TEXT,
+    user_id SERIAL NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+ALTER TABLE api_keys
+ADD CONSTRAINT api_key_unique UNIQUE (api_key);

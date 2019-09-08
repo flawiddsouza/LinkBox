@@ -128,11 +128,14 @@ wss.on('connection', client => {
 
 })
 
-function checkAuth(authToken) {
+function checkAuth(authToken, middlewareRequestBody=null) {
     if(authToken) {
         try {
             var decoded = jwt.verify(authToken, process.env.JWT_SECRET)
             authUser = decoded
+            if(middlewareRequestBody) {
+                middlewareRequestBody.authUser = decoded
+            }
             return true
         } catch(err) {
             if(err.name == 'JsonWebTokenError') {
@@ -260,3 +263,48 @@ async function changeLinkGroup(payload, client) {
         winston.error(error)
     }
 }
+
+function checkAuthMiddleware(req, res, next) {
+    if(!checkAuth(req.header('authToken'), req.body)) {
+        return res.json({
+            success: false,
+            message: 'Authentication failed'
+        })
+    }
+    next()
+}
+
+var apiKeyRoutes = require('./routes/api-key')
+app.use('/api-key', checkAuthMiddleware, apiKeyRoutes)
+
+async function checkIfValidAPIToken(req) {
+    if(req.body.username && req.body.apiKey) {
+        try {
+            let user = await db.one('SELECT id FROM users WHERE username = $1', [req.body.username])
+            await db.one('SELECT id FROM api_keys WHERE api_key = $1 and user_id = $2', [req.body.apiKey, user.id])
+        } catch(error) {
+            return false
+        }
+        return true
+    }
+    return false
+}
+
+// request body must be of the format { username: username, apiKey: apiKey, title: title, link: link }
+app.post('/add-link', async(req, res, next) => {
+    try {
+        if(await checkIfValidAPIToken(req)) {
+            if(req.body.title && req.body.link) {
+                await addLink(req.body)
+                res.send('Success')
+            } else {
+                res.send('Invalid link format')
+            }
+        } else {
+            res.send('Invalid API Key or Username')
+        }
+        next()
+    } catch(error) {
+        next(error)
+    }
+})

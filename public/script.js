@@ -137,6 +137,8 @@ const store = new Vuex.Store({
     }
 })
 
+Vue.use(window['vue-js-modal'].default)
+
 var app = new Vue({
     el: '#app',
     store: store,
@@ -147,7 +149,10 @@ var app = new Vue({
                 <div v-if="!needLogin">Total: {{ linkCount }} Links</div>
                 <span v-if="!needLogin && webSocketDisconnected">Disconnected</span>
                 <span v-else-if="!needLogin && !webSocketDisconnected">Connected</span>
-                <a @click="logout" class="logout" v-if="!needLogin">Logout</a>
+                <div v-if="!needLogin">
+                    <a @click="viewAPIKeys" class="mr-1em">View API Keys</a>
+                    <a @click="logout" class="logout">Logout</a>
+                </div>
             </header>
             <main v-if="!needLogin && links.length > 0">
                 <div v-for="linkGroup in links" class="link-group">
@@ -196,13 +201,41 @@ var app = new Vue({
                     <div class="user-helper">Already have an account? <a @click="switchToLoginForm">Click to Login instead</a></div>
                 </form>
             </main>
+            <modal name="view-api-keys" height="auto">
+                <section class="p-1em" style="max-height: 30em; overflow-y: auto">
+                    <div class="d-f flex-jc-sb flex-ai-fs">
+                        <h2>API Keys</h2>
+                        <button v-if="!generatingAPIKey" @click="generateAPIKey">Generate API Key</button>
+                        <button disabled v-else>Generating API Key...</button>
+                    </div>
+                    <table class="mt-1em">
+                        <thead>
+                            <tr>
+                                <th>API Key</th>
+                                <th>Generated On</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="apiKey in apiKeys">
+                                <td>{{ apiKey.api_key }}</td>
+                                <td>{{ momentDateTime(apiKey.created_at) }}</td>
+                                <td><button @click="deleteAPIKey(apiKey.id)">Delete</button></td>
+                            </tr>
+                            <tr v-if="apiKeys.length === 0">
+                                <td colspan="100%">No API Keys Have Been Generated Yet</td>
+                        </tbody>
+                    </table>
+                </section>
+            </modal>
         </div>
     `,
     data: {
         username: null,
         password: null,
         authError: null,
-        register: false
+        register: false,
+        apiKeys: [],
+        generatingAPIKey: false
     },
     computed: {
         links() {
@@ -288,8 +321,10 @@ var app = new Vue({
             })
         },
         logout() {
-            localStorage.clear()
-            getLinks()
+            if(confirm('Are you sure you want to logout?')) {
+                localStorage.clear()
+                getLinks()
+            }
         },
         openAllInGroup(linkGroup) {
             var popupBlocked = false
@@ -333,6 +368,83 @@ var app = new Vue({
                 link.link_group_id = linkGroup.linkGroup.id
                 linkGroup.links.unshift(link)
             }
+        },
+        viewAPIKeys() {
+            this.fetchAPIKeys()
+            this.$modal.show('view-api-keys')
+        },
+        fetchAPIKeys(callback=null) {
+            let authToken = localStorage.getItem('authToken')
+            fetch('/api-key/list', {
+                method: 'get',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'authToken': authToken
+                }
+            })
+            .then(response => response.json())
+            .then(response => {
+                if(response.hasOwnProperty('success') && !response.success) {
+                    alert('Auth failed')
+                } else {
+                    this.apiKeys = response
+                    if(callback) {
+                        callback()
+                    }
+                }
+            })
+        },
+        generateAPIKey() {
+            this.generatingAPIKey = true
+            let authToken = localStorage.getItem('authToken')
+            fetch('/api-key/generate', {
+                method: 'post',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'authToken': authToken
+                }
+            })
+            .then(response => response.json())
+            .then(response => {
+                if(response.hasOwnProperty('success') && !response.success) {
+                    alert('Auth failed')
+                } else {
+                    this.fetchAPIKeys()
+                }
+                this.generatingAPIKey = false
+            })
+        },
+        createLoader(loaderMessage) {
+            let loader = document.createElement('div')
+            loader.style.cssText = `
+                position: fixed;
+                background-color: #00000036;
+                height: 100vh;
+                width: 100vw;
+                z-index: 1000;
+                top: 0;
+            `
+            loader.innerHTML = `
+                <div style="height: 100vh; display: flex; justify-content: center; align-items: center; color: white; font-size: 2em;">${loaderMessage}</div>
+            `
+            document.body.appendChild(loader)
+            return loader
+        },
+        deleteAPIKey(id) {
+            let loader = this.createLoader('Deleting...')
+            let authToken = localStorage.getItem('authToken')
+            fetch(`/api-key/delete/${id}`, {
+                method: 'delete',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'authToken': authToken
+                }
+            }).then(() => {
+                this.fetchAPIKeys(() => loader.remove())
+            })
         }
     },
 })

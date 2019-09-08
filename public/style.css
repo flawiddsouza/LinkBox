@@ -134,6 +134,45 @@ header .logout {
     margin-top: 1em;
 }
 
+.mr-1em {
+    margin-right: 1em;
+}
+
+.mt-1em {
+    margin-top: 1em;
+}
+
+.p-1em {
+    padding: 1em;
+}
+
+h2 {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+table {
+    border-collapse: collapse;
+    font-size: 0.813em;
+}
+
+table th, table td {
+    border: 1px solid grey;
+    padding: 0.3em;
+}
+
+.d-f {
+    display: flex;
+}
+
+.flex-jc-sb {
+    justify-content: space-between;
+}
+
+.flex-ai-fs {
+    align-items: flex-start;
+}
+
 /* From Bulma CSS */
 
 .message {
