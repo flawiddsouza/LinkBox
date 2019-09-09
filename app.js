@@ -22,6 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')))
 
 var bodyParser = require('body-parser')
 app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: true }))
 
 var auth = require('./routes/auth')
 app.use('/', auth)
