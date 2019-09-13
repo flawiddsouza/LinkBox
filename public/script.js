@@ -110,6 +110,10 @@ function changeLinkGroup(linkId, oldLinkGroupId, newLinkGroupId) {
     wsSendJSON({ method: 'change-link-group', payload: { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId } })   
 }
 
+function renameLinkGroup(linkGroupId, linkGroupName) {
+    wsSendJSON({ method: 'rename-link-group', payload: { linkGroupId, linkGroupName } }) 
+}
+
 function OnWebSocketOpen() {
     getLinks()
 }
@@ -157,8 +161,8 @@ var app = new Vue({
             <main v-if="!needLogin && links.length > 0">
                 <div v-for="linkGroup in links" class="link-group">
                     <div class="link-group-header">
-                        <div class="title" v-if="linkGroup.linkGroup.title">{{ linkGroup.linkGroup.title }}</div>
-                        <div class="count">{{ linkGroup.links.length }} Links</div>
+                        <div class="title" v-if="linkGroup.linkGroup.title" @click="renameLinkGroup(linkGroup.linkGroup)">{{ linkGroup.linkGroup.title }}</div>
+                        <div class="count" @click="renameLinkGroup(linkGroup.linkGroup)">{{ linkGroup.links.length }} Links</div>
                         <div>
                             <div class="creation-datetime">Created {{ momentDateTime(linkGroup.linkGroup.created_at) }}</div>
                             <div class="actions">
@@ -445,6 +449,14 @@ var app = new Vue({
             }).then(() => {
                 this.fetchAPIKeys(() => loader.remove())
             })
+        },
+        renameLinkGroup(linkGroup) {
+            let linkGroupName = prompt('Link Group Name', linkGroup.title ? linkGroup.title : '')
+
+            if(linkGroupName || linkGroupName === '') {
+                renameLinkGroup(linkGroup.id, linkGroupName)
+                linkGroup.title = linkGroupName
+            }
         }
     },
 })

@@ -92,6 +92,10 @@ wss.on('connection', client => {
                             winston.info({ method: 'change-link-group', payload: payload, client: client.id })
                             changeLinkGroup(payload, client)
                             break
+                        case 'rename-link-group':
+                            winston.info({ method: 'rename-link-group', payload: payload, client: client.id })
+                            renameLinkGroup(payload, client)
+                            break
                     }
                 }
             } else {
@@ -260,6 +264,19 @@ async function changeLinkGroup(payload, client) {
             db.none('DELETE from link_groups WHERE id = $1', [payload.oldLinkGroupId])
         }
         // housekeeping by deleting linkGroup of the just updated link if there's no other links associated to it
+    } catch(error) {
+        winston.error(error)
+    }
+}
+
+// payload == { linkGroupId: linkGroupId, linkGroupName:linkGroupName }
+async function renameLinkGroup(payload, client) {
+    try {
+        await db.none('UPDATE link_groups SET title = $1 WHERE id = $2 AND user_id = $3', [payload.linkGroupName, payload.linkGroupId, authUser.id])
+        authenticatedClients[authUser.id].forEach(client => {
+            winston.info({ event: 'link-group-updated', payload: payload, client: client.id })
+            client.sendJSON({ event: 'link-group-updated', payload: payload })
+        })
     } catch(error) {
         winston.error(error)
     }
