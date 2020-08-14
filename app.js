@@ -187,22 +187,26 @@ function getLinks(client) {
 }
 
 // payload == linkObject { title: title, link: link }
-async function addLink(payload) {
+async function addLink(payload, userId=null) {
+    if(userId === null) {
+        userId = authUser.id
+    }
+
     try {
         var linkGroupId = null
         try {
-            var lastAddedLink = await db.one('SELECT link_group_id FROM links WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [authUser.id])
+            var lastAddedLink = await db.one('SELECT link_group_id FROM links WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [userId])
             linkGroupId = lastAddedLink.link_group_id
         } catch(error) {
             if(error.name === 'QueryResultError') {
-                var newLinkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [authUser.id])
+                var newLinkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [userId])
                 linkGroupId = newLinkGroup.id
             } else {
                 winston.error(error)
             }
         }
-        await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, authUser.id])
-        authenticatedClients[authUser.id].forEach(client => {
+        await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, userId])
+        authenticatedClients[userId].forEach(client => {
             client.sendJSON({ event: 'link-added' })
         })
     } catch(error) {
@@ -211,13 +215,17 @@ async function addLink(payload) {
 }
 
 // payload == linkObject Array
-async function addLinks(payload) {
+async function addLinks(payload, userId=null) {
+    if(userId === null) {
+        userId = authUser.id
+    }
+
     try {
-        var linkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [authUser.id])
+        var linkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [userId])
         for(let link of payload) {
-            await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [link.title, link.link, linkGroup.id, authUser.id])
+            await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [link.title, link.link, linkGroup.id, userId])
         }
-        authenticatedClients[authUser.id].forEach(client => {
+        authenticatedClients[userId].forEach(client => {
             client.sendJSON({ event: 'links-added' })
         })
     } catch(error) {
@@ -300,10 +308,10 @@ async function checkIfValidAPIToken(req) {
         try {
             let user = await db.one('SELECT id FROM users WHERE username = $1', [req.body.username])
             await db.one('SELECT id FROM api_keys WHERE api_key = $1 and user_id = $2', [req.body.apiKey, user.id])
+            return user.id
         } catch(error) {
             return false
         }
-        return true
     }
     return false
 }
@@ -311,9 +319,10 @@ async function checkIfValidAPIToken(req) {
 // request body must be of the format { username: username, apiKey: apiKey, title: title, link: link }
 app.post('/add-link', async(req, res, next) => {
     try {
-        if(await checkIfValidAPIToken(req)) {
+        let userId = await checkIfValidAPIToken(req)
+        if(userId) {
             if(req.body.title && req.body.link) {
-                await addLink(req.body)
+                await addLink(req.body, userId)
                 res.send('Success')
             } else {
                 res.send('Invalid link format')
