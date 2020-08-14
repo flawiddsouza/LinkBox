@@ -21,13 +21,12 @@ ws.addEventListener('message', e => {
                     break
                 case 'link-deleted':
                     app.$store.state.links.forEach((linkGroup, index) => {
-                        var newLinkGroupLinks = linkGroup.links.filter(link => link.id !== payload)
-                        linkGroup.links = newLinkGroupLinks
-                        if(linkGroup.links.length == 0) { // if a linkGroup is empty
+                        linkGroup.links = linkGroup.links.filter(link => link.id !== payload)
+                        if(linkGroup.links.length === 0) { // if a linkGroup is empty
                             app.$store.state.links.splice(index, 1) // remove it from the array
                         }
-                        app.$store.commit('updateLinkCount', app.$store.state.linkCount - 1)
                     })
+                    app.$store.commit('updateLinkCount', app.$store.state.linkCount - 1)
                     break
                 case 'link-already-deleted':
                     // console.log('link already deleted')
@@ -107,11 +106,11 @@ function deleteLink(id) {
 }
 
 function changeLinkGroup(linkId, oldLinkGroupId, newLinkGroupId) {
-    wsSendJSON({ method: 'change-link-group', payload: { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId } })   
+    wsSendJSON({ method: 'change-link-group', payload: { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId } })
 }
 
 function renameLinkGroup(linkGroupId, linkGroupName) {
-    wsSendJSON({ method: 'rename-link-group', payload: { linkGroupId, linkGroupName } }) 
+    wsSendJSON({ method: 'rename-link-group', payload: { linkGroupId, linkGroupName } })
 }
 
 function OnWebSocketOpen() {
