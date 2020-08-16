@@ -1,4 +1,4 @@
-const ws = new ReconnectingWebSocket(`ws://${document.location.host}`)
+const ws = new ReconnectingWebSocket(`${document.location.protocol === 'https:' ? 'wss' : 'ws'}://${document.location.host}`)
 
 ws.addEventListener('message', e => {
     try {
