@@ -167,6 +167,7 @@ var app = new Vue({
                             <div class="actions">
                                 <a @click="openAllInGroup(linkGroup)">Restore All</a>
                                 <a @click="deleteAllInGroup(linkGroup)">Delete All</a>
+                                <a @click="copyAllInGroupToClipboard(linkGroup)">Copy All To Clipboard</a>
                             </div>
                         </div>
                     </div>
@@ -349,6 +350,14 @@ var app = new Vue({
                     this.deleteLink(linkObj.id)
                 })
             }
+        },
+        copyAllInGroupToClipboard(linkGroup) {
+            var clipboardText = ''
+            linkGroup.links.forEach(linkObj => {
+                clipboardText += linkObj.link + '\n'
+            })
+            navigator.clipboard.writeText(clipboardText)
+            alert(`${linkGroup.links.length} links copied to clipboard`)
         },
         momentDateTime(dateTime) {
             return moment.utc(dateTime).local().format('DD-MMM-YY h:mm A')
