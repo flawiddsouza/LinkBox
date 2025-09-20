@@ -113,6 +113,10 @@ function renameLinkGroup(linkGroupId, linkGroupName) {
     wsSendJSON({ method: 'rename-link-group', payload: { linkGroupId, linkGroupName } })
 }
 
+function mergeGroups(targetGroupId, sourceGroupIds) {
+    wsSendJSON({ method: 'merge-groups', payload: { targetGroupId, sourceGroupIds } })
+}
+
 function OnWebSocketOpen() {
     getLinks()
 }
@@ -172,7 +176,7 @@ var app = new Vue({
                                 <a @click="openAllInGroup(linkGroup)">Restore All</a>
                                 <a @click="deleteAllInGroup(linkGroup)">Delete All</a>
                                 <a @click="copyAllInGroupToClipboard(linkGroup)">Copy All To Clipboard</a>
-                                <span class="mr-1em">|</span>
+                                <a @click="openMergeModal(linkGroup)" title="Merge other groups into this one">Merge…</a>
                                 <span class="host-group-action">
                                     <a @click="toggleHostMenu(linkGroup)">Create new group with…</a>
                                     <select v-if="linkGroup.showHostMenu" @change="createNewGroupWithHost(linkGroup, $event)" @blur="hideHostMenu(linkGroup)">
@@ -243,6 +247,42 @@ var app = new Vue({
                     </table>
                 </section>
             </modal>
+            <modal name="merge-groups" height="auto">
+                <section class="p-1em" style="max-width: 28em;">
+                    <h2 class="mb-1em">Merge groups into target</h2>
+                    <div class="mb-1em" v-if="mergeModal.targetGroupId">
+                        Target Group ID: <strong>{{ mergeModal.targetGroupId }}</strong>
+                    </div>
+                    <div class="mb-1em">
+                        <label style="display:block; margin:.25em 0;">
+                            <input type="radio" value="intoTarget" v-model="mergeModal.mode">
+                            <span style="margin-left:.5em">Merge selected groups into this target</span>
+                        </label>
+                        <label style="display:block; margin:.25em 0;">
+                            <input type="radio" value="intoSelected" v-model="mergeModal.mode">
+                            <span style="margin-left:.5em">Merge this target into a selected group</span>
+                        </label>
+                    </div>
+                    <div v-if="mergeModal.mode === 'intoTarget'" style="max-height: 16em; overflow-y: auto; border: 1px solid #ddd; padding: .5em;">
+                        <label v-for="g in mergeSourceCandidates" :key="g.linkGroup.id" style="display:block; margin:.25em 0;">
+                            <input type="checkbox" :value="g.linkGroup.id" v-model="mergeModal.selectedSourceIds">
+                            <span style="margin-left:.5em">#{{ g.linkGroup.id }} — {{ g.linkGroup.title || 'Untitled' }} ({{ g.links.length }} links)</span>
+                        </label>
+                        <div v-if="mergeSourceCandidates.length === 0">No other groups to merge.</div>
+                    </div>
+                    <div v-else style="max-height: 16em; overflow-y: auto; border: 1px solid #ddd; padding: .5em;">
+                        <label v-for="g in mergeDestCandidates" :key="g.linkGroup.id" style="display:block; margin:.25em 0;">
+                            <input type="radio" name="merge-dest" :value="g.linkGroup.id" v-model="mergeModal.selectedDestId">
+                            <span style="margin-left:.5em">#{{ g.linkGroup.id }} — {{ g.linkGroup.title || 'Untitled' }} ({{ g.links.length }} links)</span>
+                        </label>
+                        <div v-if="mergeDestCandidates.length === 0">No other groups available.</div>
+                    </div>
+                    <div class="mt-1em d-f flex-jc-fe">
+                        <button @click="$modal.hide('merge-groups')">Cancel</button>
+                        <button class="ml-1em" :disabled="!canConfirmMerge" @click="confirmMerge">Merge</button>
+                    </div>
+                </section>
+            </modal>
         </div>
     `,
     data: {
@@ -252,6 +292,8 @@ var app = new Vue({
         register: false,
         apiKeys: [],
         generatingAPIKey: false
+                ,
+                        mergeModal: { targetGroupId: null, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null }
     },
     computed: {
         links() {
@@ -265,6 +307,21 @@ var app = new Vue({
         },
         webSocketDisconnected() {
             return this.$store.state.webSocketDisconnected
+        },
+        mergeSourceCandidates() {
+            if(!this.mergeModal.targetGroupId) return []
+            return this.links.filter(g => g.linkGroup.id != this.mergeModal.targetGroupId)
+        },
+        mergeDestCandidates() {
+            // same as source candidates; kept separate for clarity
+            return this.mergeSourceCandidates
+        },
+        canConfirmMerge() {
+            if(this.mergeModal.mode === 'intoTarget') {
+                return this.mergeModal.selectedSourceIds && this.mergeModal.selectedSourceIds.length > 0
+            } else {
+                return !!this.mergeModal.selectedDestId
+            }
         }
     },
     methods: {
@@ -510,6 +567,22 @@ var app = new Vue({
                 renameLinkGroup(linkGroup.id, linkGroupName)
                 linkGroup.title = linkGroupName
             }
+        },
+        openMergeModal(linkGroup) {
+            this.mergeModal = { targetGroupId: linkGroup.linkGroup.id, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null }
+            this.$modal.show('merge-groups')
+        },
+        confirmMerge() {
+            if(this.mergeModal.mode === 'intoTarget') {
+                if(this.mergeModal.selectedSourceIds.length === 0) return
+                mergeGroups(this.mergeModal.targetGroupId, this.mergeModal.selectedSourceIds.map(id => Number(id)))
+            } else {
+                const dest = Number(this.mergeModal.selectedDestId)
+                if(!dest) return
+                mergeGroups(dest, [Number(this.mergeModal.targetGroupId)])
+            }
+            this.$modal.hide('merge-groups')
+            this.mergeModal = { targetGroupId: null, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null }
         }
     },
 })

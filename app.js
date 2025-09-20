@@ -100,6 +100,10 @@ wss.on('connection', client => {
                             winston.info({ method: 'create-group-with-links', payload: payload, client: client.id })
                             createGroupWithLinks(payload, client)
                             break
+                        case 'merge-groups':
+                            winston.info({ method: 'merge-groups', payload: payload, client: client.id })
+                            mergeGroups(payload, client)
+                            break
                     }
                 }
             } else {
@@ -311,6 +315,42 @@ async function createGroupWithLinks(payload, client) {
         // notify clients; reuse existing event to minimize client changes
         authenticatedClients[authUser.id].forEach(client => {
             winston.info({ event: 'links-added', payload: { newGroupId: newGroup.id, moved: payload.linkIds.length }, client: client.id })
+            client.sendJSON({ event: 'links-added' })
+        })
+    } catch(error) {
+        winston.error(error)
+    }
+}
+
+// payload == { targetGroupId: number, sourceGroupIds: number[] }
+async function mergeGroups(payload, client) {
+    try {
+        if(!payload || !payload.targetGroupId || !Array.isArray(payload.sourceGroupIds) || payload.sourceGroupIds.length === 0) {
+            return
+        }
+        // filter out any accidental inclusion of target in sources and dedupe
+        const targetId = Number(payload.targetGroupId)
+        const sourceIds = Array.from(new Set(payload.sourceGroupIds.map(Number))).filter(id => id !== targetId)
+        if(sourceIds.length === 0) {
+            return
+        }
+        // ensure the target group belongs to the user (no-op result throws if not found)
+        await db.one('SELECT id FROM link_groups WHERE id = $1 AND user_id = $2', [targetId, authUser.id])
+
+        // fetch links from source groups in current visual order (updated_at DESC)
+        const sourceLinks = await db.any('SELECT id FROM links WHERE user_id = $1 AND link_group_id IN ($2:csv) ORDER BY updated_at DESC', [authUser.id, sourceIds])
+        // update in reverse order so ORDER BY updated_at DESC preserves original order
+        for (let i = sourceLinks.length - 1; i >= 0; i--) {
+            const linkId = sourceLinks[i].id
+            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [targetId, linkId, authUser.id])
+        }
+
+        // delete emptied source groups that belong to this user
+        await db.none('DELETE FROM link_groups WHERE user_id = $1 AND id IN ($2:csv)', [authUser.id, sourceIds])
+
+        // notify clients; reuse existing event to trigger a refresh on clients
+        authenticatedClients[authUser.id].forEach(client => {
+            winston.info({ event: 'links-added', payload: { mergedInto: targetId, mergedFrom: sourceIds }, client: client.id })
             client.sendJSON({ event: 'links-added' })
         })
     } catch(error) {
