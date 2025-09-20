@@ -29,7 +29,6 @@ app.use('/', auth)
 
 const jwt = require('jsonwebtoken')
 
-var authUser = {}
 var authenticatedClients = {}
 
 // from: https://stackoverflow.com/a/46878342/4932305
@@ -55,54 +54,58 @@ wss.on('connection', client => {
             var authToken = receivedJSON.authToken
             var method = receivedJSON.method
             var payload = receivedJSON.payload
-            if(checkAuth(authToken)) {
+            const user = checkAuth(authToken)
+            if(user) {
+                const userId = user.id
                 // assign the key value to itself if it exists, else assign an empty array
-                authenticatedClients[authUser.id] = authenticatedClients[authUser.id] || []
-                if(authenticatedClients[authUser.id].length == 0) {
-                    authenticatedClients[authUser.id].push(client)
+                authenticatedClients[userId] = authenticatedClients[userId] || []
+                if(authenticatedClients[userId].length == 0) {
+                    authenticatedClients[userId].push(client)
                 }
                 var clientAlreadyExists = false
-                authenticatedClients[authUser.id].forEach(preExistingClient => {
+                authenticatedClients[userId].forEach(preExistingClient => {
                     if(client.id == preExistingClient.id) {
                         clientAlreadyExists = true
                     }
                 })
                 if(!clientAlreadyExists) {
-                    authenticatedClients[authUser.id].push(client)
+                    authenticatedClients[userId].push(client)
                 }
+                // remember which user this socket belongs to for cleanup
+                client.userId = userId
                 if(method) {
                     switch(method) {
                         case 'get-links':
                             winston.info({ method: 'get-links', client: client.id })
-                            getLinks(client)
+                            getLinks(client, userId)
                             break
                         case 'add-link':
                             winston.info({ method: 'add-link', payload: payload, client: client.id })
-                            addLink(payload)
+                            addLink(payload, userId)
                             break
                         case 'add-links':
                             winston.info({ method: 'add-links', payload: payload, client: client.id })
-                            addLinks(payload)
+                            addLinks(payload, userId)
                             break
                         case 'delete-link':
                             winston.info({ method: 'delete-link', payload: payload, client: client.id })
-                            deleteLink(payload, client)
+                            deleteLink(payload, client, userId)
                             break
                         case 'change-link-group':
                             winston.info({ method: 'change-link-group', payload: payload, client: client.id })
-                            changeLinkGroup(payload, client)
+                            changeLinkGroup(payload, client, userId)
                             break
                         case 'rename-link-group':
                             winston.info({ method: 'rename-link-group', payload: payload, client: client.id })
-                            renameLinkGroup(payload, client)
+                            renameLinkGroup(payload, client, userId)
                             break
                         case 'create-group-with-links':
                             winston.info({ method: 'create-group-with-links', payload: payload, client: client.id })
-                            createGroupWithLinks(payload, client)
+                            createGroupWithLinks(payload, client, userId)
                             break
                         case 'merge-groups':
                             winston.info({ method: 'merge-groups', payload: payload, client: client.id })
-                            mergeGroups(payload, client)
+                            mergeGroups(payload, client, userId)
                             break
                     }
                 }
@@ -125,8 +128,8 @@ wss.on('connection', client => {
     })
 
     client.on('close', () => {
-        if(Object.keys(authUser).length !== 0) {
-            authenticatedClients[authUser.id] = authenticatedClients[authUser.id].filter(preExistingClient => preExistingClient.id !== client.id)
+        if (client.userId && authenticatedClients[client.userId]) {
+            authenticatedClients[client.userId] = authenticatedClients[client.userId].filter(preExistingClient => preExistingClient.id !== client.id)
         }
     })
 
@@ -134,8 +137,8 @@ wss.on('connection', client => {
     // see: https://github.com/websockets/ws/issues/1256#issuecomment-352288884
     // also useful when close isn't sent by the client
     client.on('error', error => {
-        if(Object.keys(authUser).length !== 0) {
-            authenticatedClients[authUser.id] = authenticatedClients[authUser.id].filter(preExistingClient => preExistingClient.id !== client.id)
+        if (client.userId && authenticatedClients[client.userId]) {
+            authenticatedClients[client.userId] = authenticatedClients[client.userId].filter(preExistingClient => preExistingClient.id !== client.id)
         }
     })
 
@@ -145,11 +148,10 @@ function checkAuth(authToken, middlewareRequestBody=null) {
     if(authToken) {
         try {
             var decoded = jwt.verify(authToken, process.env.JWT_SECRET)
-            authUser = decoded
             if(middlewareRequestBody) {
                 middlewareRequestBody.authUser = decoded
             }
-            return true
+            return decoded
         } catch(err) {
             if(err.name == 'JsonWebTokenError') {
                 return false
@@ -164,8 +166,8 @@ function checkAuth(authToken, middlewareRequestBody=null) {
 
 // WebSocket Methods
 
-function getLinks(client) {
-    db.query('SELECT * FROM links WHERE user_id = $1 ORDER BY updated_at DESC', [authUser.id])
+function getLinks(client, userId) {
+    db.query('SELECT * FROM links WHERE user_id = $1 ORDER BY updated_at DESC', [userId])
     .then(rows => {
         var group_to_values = rows.reduce((obj, item) => {
             obj[item.link_group_id] = obj[item.link_group_id] || []
@@ -177,7 +179,7 @@ function getLinks(client) {
             return { linkGroup: { id: key }, links: group_to_values[key] }
         })
 
-        db.query('SELECT * FROM link_groups WHERE user_id = $1', [authUser.id])
+        db.query('SELECT * FROM link_groups WHERE user_id = $1', [userId])
         .then(rows2 => {
             rows2.forEach(row => {
                 groups.forEach(group => {
@@ -195,9 +197,9 @@ function getLinks(client) {
 }
 
 // payload == linkObject { title: title, link: link }
-async function addLink(payload, userId=null) {
-    if(userId === null) {
-        userId = authUser.id
+async function addLink(payload, userId) {
+    if(!userId) {
+        throw new Error('userId required')
     }
 
     try {
@@ -214,18 +216,20 @@ async function addLink(payload, userId=null) {
             }
         }
         await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, userId])
-        authenticatedClients[userId].forEach(client => {
-            client.sendJSON({ event: 'link-added' })
-        })
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                client.sendJSON({ event: 'link-added' })
+            })
+        }
     } catch(error) {
         winston.error(error)
     }
 }
 
 // payload == linkObject Array
-async function addLinks(payload, userId=null) {
-    if(userId === null) {
-        userId = authUser.id
+async function addLinks(payload, userId) {
+    if(!userId) {
+        throw new Error('userId required')
     }
 
     try {
@@ -233,23 +237,30 @@ async function addLinks(payload, userId=null) {
         for(let link of payload) {
             await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [link.title, link.link, linkGroup.id, userId])
         }
-        authenticatedClients[userId].forEach(client => {
-            client.sendJSON({ event: 'links-added' })
-        })
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                client.sendJSON({ event: 'links-added' })
+            })
+        }
     } catch(error) {
         winston.error(error)
     }
 }
 
 // payload == linkId
-async function deleteLink(payload, client) {
+async function deleteLink(payload, client, userId) {
+    if(!userId) {
+        throw new Error('userId required')
+    }
     try {
-        var result = await db.result('DELETE FROM links WHERE id = $1 AND user_id = $2 RETURNING link_group_id', [payload, authUser.id])
+        var result = await db.result('DELETE FROM links WHERE id = $1 AND user_id = $2 RETURNING link_group_id', [payload, userId])
         if(result.rowCount !== 0) {
-            authenticatedClients[authUser.id].forEach(client => {
-                winston.info({ event: 'link-deleted', payload: payload, client: client.id })
-                client.sendJSON({ event: 'link-deleted', payload: payload })
-            })
+            if (authenticatedClients[userId]) {
+                authenticatedClients[userId].forEach(client => {
+                    winston.info({ event: 'link-deleted', payload: payload, client: client.id })
+                    client.sendJSON({ event: 'link-deleted', payload: payload })
+                })
+            }
             // housekeeping by deleting linkGroup of the just deleted link if there's no other links associated to it
             var linkGroupId = result.rows[0].link_group_id
             var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1)', [linkGroupId])
@@ -267,13 +278,18 @@ async function deleteLink(payload, client) {
 }
 
 // payload == { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId }
-async function changeLinkGroup(payload, client) {
+async function changeLinkGroup(payload, client, userId) {
+    if(!userId) {
+        throw new Error('userId required')
+    }
     try {
-        await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [payload.newLinkGroupId, payload.linkId, authUser.id])
-        authenticatedClients[authUser.id].forEach(client => {
-            winston.info({ event: 'link-updated', payload: payload.linkId, client: client.id })
-            client.sendJSON({ event: 'link-updated', payload: payload.linkId })
-        })
+        await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [payload.newLinkGroupId, payload.linkId, userId])
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                winston.info({ event: 'link-updated', payload: payload.linkId, client: client.id })
+                client.sendJSON({ event: 'link-updated', payload: payload.linkId })
+            })
+        }
         // housekeeping by deleting linkGroup of the just updated link if there's no other links associated to it
         var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1)', [payload.oldLinkGroupId])
         if(!linkGroupAssociatedLinks.rows[0].exists) {
@@ -286,44 +302,57 @@ async function changeLinkGroup(payload, client) {
 }
 
 // payload == { linkGroupId: linkGroupId, linkGroupName:linkGroupName }
-async function renameLinkGroup(payload, client) {
+async function renameLinkGroup(payload, client, userId) {
+    if(!userId) {
+        throw new Error('userId required')
+    }
     try {
-        await db.none('UPDATE link_groups SET title = $1 WHERE id = $2 AND user_id = $3', [payload.linkGroupName, payload.linkGroupId, authUser.id])
-        authenticatedClients[authUser.id].forEach(client => {
-            winston.info({ event: 'link-group-updated', payload: payload, client: client.id })
-            client.sendJSON({ event: 'link-group-updated', payload: payload })
-        })
+        await db.none('UPDATE link_groups SET title = $1 WHERE id = $2 AND user_id = $3', [payload.linkGroupName, payload.linkGroupId, userId])
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                winston.info({ event: 'link-group-updated', payload: payload, client: client.id })
+                client.sendJSON({ event: 'link-group-updated', payload: payload })
+            })
+        }
     } catch(error) {
         winston.error(error)
     }
 }
 
 // payload == { linkIds: [..], title?: string }
-async function createGroupWithLinks(payload, client) {
+async function createGroupWithLinks(payload, client, userId) {
+    if(!userId) {
+        throw new Error('userId required')
+    }
     try {
         if(!payload || !Array.isArray(payload.linkIds) || payload.linkIds.length === 0) {
             return
         }
         // create new group, optionally titled
-        const newGroup = await db.one('INSERT INTO link_groups(user_id, title) VALUES ($1, $2) RETURNING id', [authUser.id, payload.title || null])
+        const newGroup = await db.one('INSERT INTO link_groups(user_id, title) VALUES ($1, $2) RETURNING id', [userId, payload.title || null])
         // move each link to the new group for this user
         // update in reverse order so that ORDER BY updated_at DESC preserves original order
         for (let i = payload.linkIds.length - 1; i >= 0; i--) {
             const linkId = payload.linkIds[i]
-            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [newGroup.id, linkId, authUser.id])
+            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [newGroup.id, linkId, userId])
         }
         // notify clients; reuse existing event to minimize client changes
-        authenticatedClients[authUser.id].forEach(client => {
-            winston.info({ event: 'links-added', payload: { newGroupId: newGroup.id, moved: payload.linkIds.length }, client: client.id })
-            client.sendJSON({ event: 'links-added' })
-        })
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                winston.info({ event: 'links-added', payload: { newGroupId: newGroup.id, moved: payload.linkIds.length }, client: client.id })
+                client.sendJSON({ event: 'links-added' })
+            })
+        }
     } catch(error) {
         winston.error(error)
     }
 }
 
 // payload == { targetGroupId: number, sourceGroupIds: number[] }
-async function mergeGroups(payload, client) {
+async function mergeGroups(payload, client, userId) {
+    if(!userId) {
+        throw new Error('userId required')
+    }
     try {
         if(!payload || !payload.targetGroupId || !Array.isArray(payload.sourceGroupIds) || payload.sourceGroupIds.length === 0) {
             return
@@ -335,24 +364,26 @@ async function mergeGroups(payload, client) {
             return
         }
         // ensure the target group belongs to the user (no-op result throws if not found)
-        await db.one('SELECT id FROM link_groups WHERE id = $1 AND user_id = $2', [targetId, authUser.id])
+        await db.one('SELECT id FROM link_groups WHERE id = $1 AND user_id = $2', [targetId, userId])
 
         // fetch links from source groups in current visual order (updated_at DESC)
-        const sourceLinks = await db.any('SELECT id FROM links WHERE user_id = $1 AND link_group_id IN ($2:csv) ORDER BY updated_at DESC', [authUser.id, sourceIds])
+        const sourceLinks = await db.any('SELECT id FROM links WHERE user_id = $1 AND link_group_id IN ($2:csv) ORDER BY updated_at DESC', [userId, sourceIds])
         // update in reverse order so ORDER BY updated_at DESC preserves original order
         for (let i = sourceLinks.length - 1; i >= 0; i--) {
             const linkId = sourceLinks[i].id
-            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [targetId, linkId, authUser.id])
+            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [targetId, linkId, userId])
         }
 
         // delete emptied source groups that belong to this user
-        await db.none('DELETE FROM link_groups WHERE user_id = $1 AND id IN ($2:csv)', [authUser.id, sourceIds])
+        await db.none('DELETE FROM link_groups WHERE user_id = $1 AND id IN ($2:csv)', [userId, sourceIds])
 
         // notify clients; reuse existing event to trigger a refresh on clients
-        authenticatedClients[authUser.id].forEach(client => {
-            winston.info({ event: 'links-added', payload: { mergedInto: targetId, mergedFrom: sourceIds }, client: client.id })
-            client.sendJSON({ event: 'links-added' })
-        })
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                winston.info({ event: 'links-added', payload: { mergedInto: targetId, mergedFrom: sourceIds }, client: client.id })
+                client.sendJSON({ event: 'links-added' })
+            })
+        }
     } catch(error) {
         winston.error(error)
     }
