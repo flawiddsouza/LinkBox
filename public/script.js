@@ -105,8 +105,8 @@ function deleteLink(id) {
     wsSendJSON({ method: 'delete-link', payload: id })
 }
 
-function changeLinkGroup(linkId, oldLinkGroupId, newLinkGroupId) {
-    wsSendJSON({ method: 'change-link-group', payload: { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId } })
+function changeLinkGroup(linkId, newLinkGroupId) {
+    wsSendJSON({ method: 'change-link-group', payload: { linkId: linkId, newLinkGroupId: newLinkGroupId } })
 }
 
 function renameLinkGroup(linkGroupId, linkGroupName) {
@@ -469,7 +469,7 @@ var app = new Vue({
         },
         onDrop(linkGroup, event) {
             var link = JSON.parse(event.dataTransfer.getData('link'))
-            changeLinkGroup(link.id, link.link_group_id, linkGroup.linkGroup.id)
+            changeLinkGroup(link.id, linkGroup.linkGroup.id)
             if(linkGroup.linkGroup.id !== link.link_group_id) { // ensures the link isn't added back to the same group as it was dragged from
                 this.$store.state.links.forEach((linkGroup, index) => {
                     if(linkGroup.linkGroup.id == link.link_group_id) {

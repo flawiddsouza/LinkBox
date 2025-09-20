@@ -263,9 +263,9 @@ async function deleteLink(payload, client, userId) {
             }
             // housekeeping by deleting linkGroup of the just deleted link if there's no other links associated to it
             var linkGroupId = result.rows[0].link_group_id
-            var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1)', [linkGroupId])
+            var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1 AND user_id = $2)', [linkGroupId, userId])
             if(!linkGroupAssociatedLinks.rows[0].exists) {
-                db.none('DELETE from link_groups WHERE id = $1', [linkGroupId])
+                db.none('DELETE from link_groups WHERE id = $1 AND user_id = $2', [linkGroupId, userId])
             }
             // housekeeping by deleting linkGroup of the just deleted link if there's no other links associated to it
         } else {
@@ -277,12 +277,20 @@ async function deleteLink(payload, client, userId) {
     }
 }
 
-// payload == { linkId: linkId, oldLinkGroupId: oldLinkGroupId, newLinkGroupId: newLinkGroupId }
+// payload == { linkId: linkId, newLinkGroupId: newLinkGroupId }
 async function changeLinkGroup(payload, client, userId) {
     if(!userId) {
         throw new Error('userId required')
     }
     try {
+        // Ensure destination group belongs to this user
+        await db.one('SELECT id FROM link_groups WHERE id = $1 AND user_id = $2', [payload.newLinkGroupId, userId])
+
+        // Derive old group id from DB
+        const existing = await db.one('SELECT link_group_id FROM links WHERE id = $1 AND user_id = $2', [payload.linkId, userId])
+        const oldGroupId = existing.link_group_id
+
+        // Perform the update scoped to this user
         await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [payload.newLinkGroupId, payload.linkId, userId])
         if (authenticatedClients[userId]) {
             authenticatedClients[userId].forEach(client => {
@@ -291,9 +299,9 @@ async function changeLinkGroup(payload, client, userId) {
             })
         }
         // housekeeping by deleting linkGroup of the just updated link if there's no other links associated to it
-        var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1)', [payload.oldLinkGroupId])
+        var linkGroupAssociatedLinks = await db.result('SELECT EXISTS (SELECT 1 FROM links WHERE link_group_id = $1 AND user_id = $2)', [oldGroupId, userId])
         if(!linkGroupAssociatedLinks.rows[0].exists) {
-            db.none('DELETE from link_groups WHERE id = $1', [payload.oldLinkGroupId])
+            db.none('DELETE from link_groups WHERE id = $1 AND user_id = $2', [oldGroupId, userId])
         }
         // housekeeping by deleting linkGroup of the just updated link if there's no other links associated to it
     } catch(error) {
