@@ -70,6 +70,10 @@ header .logout {
     margin-right: 1em;
 }
 
+.host-group-action select {
+    margin-left: 0.5em;
+}
+
 .link-holder {
     display: flex;
     align-items: center;

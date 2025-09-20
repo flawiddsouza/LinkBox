@@ -96,6 +96,10 @@ wss.on('connection', client => {
                             winston.info({ method: 'rename-link-group', payload: payload, client: client.id })
                             renameLinkGroup(payload, client)
                             break
+                        case 'create-group-with-links':
+                            winston.info({ method: 'create-group-with-links', payload: payload, client: client.id })
+                            createGroupWithLinks(payload, client)
+                            break
                     }
                 }
             } else {
@@ -284,6 +288,30 @@ async function renameLinkGroup(payload, client) {
         authenticatedClients[authUser.id].forEach(client => {
             winston.info({ event: 'link-group-updated', payload: payload, client: client.id })
             client.sendJSON({ event: 'link-group-updated', payload: payload })
+        })
+    } catch(error) {
+        winston.error(error)
+    }
+}
+
+// payload == { linkIds: [..], title?: string }
+async function createGroupWithLinks(payload, client) {
+    try {
+        if(!payload || !Array.isArray(payload.linkIds) || payload.linkIds.length === 0) {
+            return
+        }
+        // create new group, optionally titled
+        const newGroup = await db.one('INSERT INTO link_groups(user_id, title) VALUES ($1, $2) RETURNING id', [authUser.id, payload.title || null])
+        // move each link to the new group for this user
+        // update in reverse order so that ORDER BY updated_at DESC preserves original order
+        for (let i = payload.linkIds.length - 1; i >= 0; i--) {
+            const linkId = payload.linkIds[i]
+            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [newGroup.id, linkId, authUser.id])
+        }
+        // notify clients; reuse existing event to minimize client changes
+        authenticatedClients[authUser.id].forEach(client => {
+            winston.info({ event: 'links-added', payload: { newGroupId: newGroup.id, moved: payload.linkIds.length }, client: client.id })
+            client.sendJSON({ event: 'links-added' })
         })
     } catch(error) {
         winston.error(error)

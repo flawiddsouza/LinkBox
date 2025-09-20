@@ -117,6 +117,10 @@ function OnWebSocketOpen() {
     getLinks()
 }
 
+function createGroupWithLinks(linkIds, title = null) {
+    wsSendJSON({ method: 'create-group-with-links', payload: { linkIds, title } })
+}
+
 const store = new Vuex.Store({
     state: {
         links: [],
@@ -168,6 +172,14 @@ var app = new Vue({
                                 <a @click="openAllInGroup(linkGroup)">Restore All</a>
                                 <a @click="deleteAllInGroup(linkGroup)">Delete All</a>
                                 <a @click="copyAllInGroupToClipboard(linkGroup)">Copy All To Clipboard</a>
+                                <span class="mr-1em">|</span>
+                                <span class="host-group-action">
+                                    <a @click="toggleHostMenu(linkGroup)">Create new group with…</a>
+                                    <select v-if="linkGroup.showHostMenu" @change="createNewGroupWithHost(linkGroup, $event)" @blur="hideHostMenu(linkGroup)">
+                                        <option value="" disabled selected>Select host…</option>
+                                        <option v-for="host in uniqueHosts(linkGroup.links)" :value="host">{{ host }}</option>
+                                    </select>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -358,6 +370,39 @@ var app = new Vue({
             })
             navigator.clipboard.writeText(clipboardText)
             alert(`${linkGroup.links.length} links copied to clipboard`)
+        },
+        toggleHostMenu(linkGroup) {
+            this.$set(linkGroup, 'showHostMenu', !linkGroup.showHostMenu)
+        },
+        hideHostMenu(linkGroup) {
+            this.$set(linkGroup, 'showHostMenu', false)
+        },
+        uniqueHosts(links) {
+            const hosts = new Set()
+            links.forEach(l => {
+                try {
+                    const u = new URL(l.link)
+                    hosts.add(u.host)
+                } catch(e) { /* ignore invalid urls */ }
+            })
+            return Array.from(hosts).sort()
+        },
+        createNewGroupWithHost(linkGroup, event) {
+            const host = event.target.value
+            if(!host) return
+            const linkIds = linkGroup.links.filter(l => {
+                try { return new URL(l.link).host === host } catch(e) { return false }
+            }).map(l => l.id)
+            const defaultTitle = `${host}`
+            const title = prompt('New Group Name (optional)', defaultTitle)
+            if (title === null) { // user cancelled -> do nothing
+                event.target.value = ''
+                this.$set(linkGroup, 'showHostMenu', false)
+                return
+            }
+            createGroupWithLinks(linkIds, title)
+            this.$set(linkGroup, 'showHostMenu', false)
+            event.target.value = ''
         },
         momentDateTime(dateTime) {
             return moment.utc(dateTime).local().format('DD-MMM-YY h:mm A')
