@@ -203,16 +203,26 @@ async function addLink(payload, userId) {
     }
 
     try {
-        var linkGroupId = null
+        // Determine the most recent link_group for this user by creation time.
+        // If none exists OR if the most recent group is older than 3 days,
+        // create a fresh group and use that for the new link.
+        let linkGroupId = null
         try {
-            var lastAddedLink = await db.one('SELECT link_group_id FROM links WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [userId])
-            linkGroupId = lastAddedLink.link_group_id
+            const lastGroup = await db.one('SELECT id, (NOW() - created_at) > interval \'3 days\' AS is_old FROM link_groups WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1', [userId])
+            if (lastGroup.is_old) {
+                const newGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [userId])
+                linkGroupId = newGroup.id
+            } else {
+                linkGroupId = lastGroup.id
+            }
         } catch(error) {
+            // No existing group found → create one
             if(error.name === 'QueryResultError') {
-                var newLinkGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [userId])
-                linkGroupId = newLinkGroup.id
+                const newGroup = await db.one('INSERT INTO link_groups(user_id) VALUES ($1) RETURNING id', [userId])
+                linkGroupId = newGroup.id
             } else {
                 winston.error(error)
+                throw error
             }
         }
         await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, userId])
