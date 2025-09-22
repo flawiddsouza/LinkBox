@@ -154,6 +154,14 @@ header .logout {
     padding: 1em;
 }
 
+.mb-1em {
+    margin-bottom: 1em;
+}
+
+.mb-0_5em {
+    margin-bottom: 0.5em;
+}
+
 h2 {
     margin-top: 0;
     margin-bottom: 0;

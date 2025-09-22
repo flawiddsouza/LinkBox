@@ -107,6 +107,10 @@ wss.on('connection', client => {
                             winston.info({ method: 'merge-groups', payload: payload, client: client.id })
                             mergeGroups(payload, client, userId)
                             break
+                        case 'move-links':
+                            winston.info({ method: 'move-links', payload: payload, client: client.id })
+                            moveLinks(payload, client, userId)
+                            break
                     }
                 }
             } else {
@@ -399,6 +403,42 @@ async function mergeGroups(payload, client, userId) {
         if (authenticatedClients[userId]) {
             authenticatedClients[userId].forEach(client => {
                 winston.info({ event: 'links-added', payload: { mergedInto: targetId, mergedFrom: sourceIds }, client: client.id })
+                client.sendJSON({ event: 'links-added' })
+            })
+        }
+    } catch(error) {
+        winston.error(error)
+    }
+}
+
+// payload == { targetGroupId: number, linkIds: number[] }
+async function moveLinks(payload, client, userId) {
+    if(!userId) {
+        throw new Error('userId required')
+    }
+    try {
+        if(!payload || !payload.targetGroupId || !Array.isArray(payload.linkIds) || payload.linkIds.length === 0) {
+            return
+        }
+        const targetId = Number(payload.targetGroupId)
+        const linkIds = Array.from(new Set(payload.linkIds.map(Number)))
+
+        // ensure the target group belongs to the user
+        await db.one('SELECT id FROM link_groups WHERE id = $1 AND user_id = $2', [targetId, userId])
+
+        // Fetch existing links (scoped to user) to honor existing visual order
+        const existing = await db.any('SELECT id FROM links WHERE user_id = $1 AND id IN ($2:csv) ORDER BY updated_at DESC', [userId, linkIds])
+
+        // Update in reverse order so ORDER BY updated_at DESC preserves original order after move
+        for (let i = existing.length - 1; i >= 0; i--) {
+            const linkId = existing[i].id
+            await db.none('UPDATE links SET link_group_id = $1 WHERE id = $2 AND user_id = $3', [targetId, linkId, userId])
+        }
+
+        // notify clients; reuse links-added to trigger a refresh
+        if (authenticatedClients[userId]) {
+            authenticatedClients[userId].forEach(client => {
+                winston.info({ event: 'links-added', payload: { movedTo: targetId, count: existing.length }, client: client.id })
                 client.sendJSON({ event: 'links-added' })
             })
         }

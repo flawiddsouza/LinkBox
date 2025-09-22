@@ -125,6 +125,10 @@ function createGroupWithLinks(linkIds, title = null) {
     wsSendJSON({ method: 'create-group-with-links', payload: { linkIds, title } })
 }
 
+function moveLinks(targetGroupId, linkIds) {
+    wsSendJSON({ method: 'move-links', payload: { targetGroupId, linkIds } })
+}
+
 const store = new Vuex.Store({
     state: {
         links: [],
@@ -183,6 +187,9 @@ var app = new Vue({
                                         <option value="" disabled selected>Select host…</option>
                                         <option v-for="host in uniqueHosts(linkGroup.links)" :value="host">{{ host }}</option>
                                     </select>
+                                </span>
+                                <span class="move-matching-action">
+                                    <a @click="openMoveMatching(linkGroup)">Move matching...</a>
                                 </span>
                             </div>
                         </div>
@@ -249,8 +256,8 @@ var app = new Vue({
             </modal>
             <modal name="merge-groups" height="auto">
                 <section class="p-1em" style="max-width: 28em;">
-                    <h2 class="mb-1em">Merge groups into target</h2>
-                    <div class="mb-1em" v-if="mergeModal.targetGroupId">
+                    <h2>Merge groups into target</h2>
+                    <div class="mt-1em mb-1em" v-if="mergeModal.targetGroupId">
                         Target Group ID: <strong>{{ mergeModal.targetGroupId }}</strong>
                     </div>
                     <div class="mb-1em">
@@ -283,6 +290,33 @@ var app = new Vue({
                     </div>
                 </section>
             </modal>
+            <modal name="move-matching" height="auto">
+                <section class="p-1em" style="max-width: 28em;">
+                    <h2>Move matching...</h2>
+                    <div class="mt-1em mb-0_5em" v-if="moveMatching.sourceGroupId"><strong>From group:</strong> #{{ moveMatching.sourceGroupId }}</div>
+                    <div class="mb-1em">
+                        <label class="label" for="mm-host">Host</label>
+                        <select id="mm-host" v-model="moveMatching.host">
+                            <option disabled value="">Select host…</option>
+                            <option v-for="host in moveMatching.hosts" :value="host">{{ host }}</option>
+                        </select>
+                    </div>
+                    <div class="mb-1em">
+                        <label class="label">Target group</label>
+                        <div style="max-height: 16em; overflow-y: auto; border: 1px solid #ddd; padding: .5em;">
+                            <label v-for="g in moveMatchingTargetCandidates" :key="g.linkGroup.id" style="display:block; margin:.25em 0;">
+                                <input type="radio" name="mm-target" :value="g.linkGroup.id" v-model.number="moveMatching.selectedTargetId">
+                                <span style="margin-left:.5em">#{{ g.linkGroup.id }} — {{ g.linkGroup.title || 'Untitled' }} ({{ g.links.length }} links)</span>
+                            </label>
+                            <div v-if="moveMatchingTargetCandidates.length === 0">No other groups available.</div>
+                        </div>
+                    </div>
+                    <div class="mt-1em d-f flex-jc-fe">
+                        <button @click="$modal.hide('move-matching')">Cancel</button>
+                        <button class="ml-1em" :disabled="!canConfirmMoveMatching" @click="confirmMoveMatching">Move</button>
+                    </div>
+                </section>
+            </modal>
         </div>
     `,
     data: {
@@ -290,10 +324,11 @@ var app = new Vue({
         password: null,
         authError: null,
         register: false,
-        apiKeys: [],
-        generatingAPIKey: false
-                ,
-                        mergeModal: { targetGroupId: null, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null }
+    apiKeys: [],
+    generatingAPIKey: false
+        ,
+            mergeModal: { targetGroupId: null, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null },
+        moveMatching: { sourceGroupId: null, host: '', hosts: [], selectedTargetId: null }
     },
     computed: {
         links() {
@@ -322,6 +357,13 @@ var app = new Vue({
             } else {
                 return !!this.mergeModal.selectedDestId
             }
+        },
+        moveMatchingTargetCandidates() {
+            if(!this.moveMatching.sourceGroupId) return []
+            return this.links.filter(g => g.linkGroup.id != this.moveMatching.sourceGroupId)
+        },
+        canConfirmMoveMatching() {
+            return !!this.moveMatching.host && !!this.moveMatching.selectedTargetId
         }
     },
     methods: {
@@ -583,6 +625,22 @@ var app = new Vue({
             }
             this.$modal.hide('merge-groups')
             this.mergeModal = { targetGroupId: null, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null }
+        },
+        openMoveMatching(linkGroup) {
+            const hosts = this.uniqueHosts(linkGroup.links)
+            this.moveMatching = { sourceGroupId: linkGroup.linkGroup.id, host: hosts[0] || '', hosts, selectedTargetId: null }
+            this.$modal.show('move-matching')
+        },
+        confirmMoveMatching() {
+            const fromGroup = this.links.find(g => g.linkGroup.id === this.moveMatching.sourceGroupId)
+            if(!fromGroup) return
+            const linkIds = fromGroup.links.filter(l => {
+                try { return new URL(l.link).host === this.moveMatching.host } catch(e) { return false }
+            }).map(l => l.id)
+            // linkIds should be > 0 as host is derived from existing links; extra safety not needed
+            moveLinks(this.moveMatching.selectedTargetId, linkIds)
+            this.$modal.hide('move-matching')
+            this.moveMatching = { sourceGroupId: null, host: '', hosts: [], selectedTargetId: null }
         }
     },
 })
