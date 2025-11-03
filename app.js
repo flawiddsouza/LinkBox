@@ -54,6 +54,7 @@ wss.on('connection', client => {
             var authToken = receivedJSON.authToken
             var method = receivedJSON.method
             var payload = receivedJSON.payload
+            var requestId = receivedJSON.requestId
             const user = checkAuth(authToken)
             if(user) {
                 const userId = user.id
@@ -81,11 +82,11 @@ wss.on('connection', client => {
                             break
                         case 'add-link':
                             winston.info({ method: 'add-link', payload: payload, client: client.id })
-                            addLink(payload, userId)
+                            addLink(payload, userId, requestId)
                             break
                         case 'add-links':
                             winston.info({ method: 'add-links', payload: payload, client: client.id })
-                            addLinks(payload, userId)
+                            addLinks(payload, userId, requestId)
                             break
                         case 'delete-link':
                             winston.info({ method: 'delete-link', payload: payload, client: client.id })
@@ -201,7 +202,7 @@ function getLinks(client, userId) {
 }
 
 // payload == linkObject { title: title, link: link }
-async function addLink(payload, userId) {
+async function addLink(payload, userId, requestId = null) {
     if(!userId) {
         throw new Error('userId required')
     }
@@ -232,7 +233,7 @@ async function addLink(payload, userId) {
         await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, userId])
         if (authenticatedClients[userId]) {
             authenticatedClients[userId].forEach(client => {
-                client.sendJSON({ event: 'link-added' })
+                client.sendJSON({ event: 'link-added', payload: requestId ? { requestId } : undefined })
             })
         }
     } catch(error) {
@@ -241,7 +242,7 @@ async function addLink(payload, userId) {
 }
 
 // payload == linkObject Array
-async function addLinks(payload, userId) {
+async function addLinks(payload, userId, requestId = null) {
     if(!userId) {
         throw new Error('userId required')
     }
@@ -253,7 +254,7 @@ async function addLinks(payload, userId) {
         }
         if (authenticatedClients[userId]) {
             authenticatedClients[userId].forEach(client => {
-                client.sendJSON({ event: 'links-added' })
+                client.sendJSON({ event: 'links-added', payload: requestId ? { requestId } : undefined })
             })
         }
     } catch(error) {
