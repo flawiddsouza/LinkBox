@@ -198,7 +198,11 @@ var app = new Vue({
                         <div v-for="link in linkGroup.links" class="link-holder" draggable="true" @dragstart="onDrag(link, $event)">
                             <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
                             <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
-                            <a :href="link.link" target="_blank" @click="deleteLink(link.id)">{{ link.title ? link.title : link.link }}</a>
+                            <a :href="link.link" target="_blank" @click="deleteLink(link.id)">
+                                <span v-if="link.title && link.title !== link.link">{{ link.title }} <span class="link-url-wrapper"><span class="link-url">{{ link.link }}</span></span></span>
+                                <span v-else-if="link.title">{{ link.title }}</span>
+                                <span v-else>{{ link.link }}</span>
+                            </a>
                         </div>
                     </div>
                 </div>

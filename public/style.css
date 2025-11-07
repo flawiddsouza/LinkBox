@@ -107,6 +107,21 @@ header .logout {
     vertical-align: middle;
 }
 
+.link-holder .link-url-wrapper {
+    font-size: 0.7em;
+    /* color: #888; */
+    color: white;
+}
+
+.link-holder .link-url {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+    max-width: 300px;
+    vertical-align: text-bottom;
+}
+
 .login {
     max-width: 30em;
 }
