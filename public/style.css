@@ -35,6 +35,33 @@ header .logout {
     margin-right: 3em;
 }
 
+header .search-box {
+    margin-right: 0.4em;
+    padding: 0.3em 0.6em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9em;
+    width: 14em;
+    outline: none;
+}
+
+header .search-box:focus {
+    border-color: #888;
+}
+
+header .search-field-select {
+    margin-right: 1em;
+    padding: 0.3em 0.4em;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9em;
+    outline: none;
+}
+
+header .search-field-select:focus {
+    border-color: #888;
+}
+
 .link-group {
     margin-left: var(--default-right-margin);
     margin-bottom: 2em;

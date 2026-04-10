@@ -161,48 +161,66 @@ var app = new Vue({
         <div>
             <header>
                 <h1>LinkBox</h1>
-                <div v-if="!needLogin">Total: {{ linkCount }} Links</div>
+                <div v-if="!needLogin">
+                    <span v-if="searchQuery.trim()">{{ filteredLinkCount }} / {{ linkCount }} Links</span>
+                    <span v-else>Total: {{ linkCount }} Links</span>
+                </div>
                 <span v-if="!needLogin && webSocketDisconnected">Disconnected</span>
                 <span v-else-if="!needLogin && !webSocketDisconnected">Connected</span>
                 <div v-if="!needLogin">
+                    <input type="search" v-model="searchQuery" placeholder="Search…" class="search-box">
+                    <select v-model="searchField" class="search-field-select">
+                        <option value="all">All fields</option>
+                        <option value="groupTitle">Group title</option>
+                        <option value="linkTitle">Link title</option>
+                        <option value="url">URL</option>
+                    </select>
                     <a @click="viewAPIKeys" class="mr-1em">View API Keys</a>
                     <a @click="logout" class="logout">Logout</a>
                 </div>
             </header>
-            <main v-if="!needLogin && links.length > 0">
-                <div v-for="linkGroup in links" class="link-group">
-                    <div class="link-group-header">
-                        <div class="title" v-if="linkGroup.linkGroup.title" @click="renameLinkGroup(linkGroup.linkGroup)">{{ linkGroup.linkGroup.title }}</div>
-                        <div class="count" @click="renameLinkGroup(linkGroup.linkGroup)">{{ linkGroup.links.length }} Links</div>
-                        <div>
-                            <div class="creation-datetime">Created {{ momentDateTime(linkGroup.linkGroup.created_at) }}</div>
-                            <div class="actions">
-                                <a @click="openAllInGroup(linkGroup)">Restore All</a>
-                                <a @click="deleteAllInGroup(linkGroup)">Delete All</a>
-                                <a @click="copyAllInGroupToClipboard(linkGroup)">Copy All To Clipboard</a>
-                                <a @click="openMergeModal(linkGroup)" title="Merge other groups into this one">Merge…</a>
-                                <span class="host-group-action">
-                                    <a @click="toggleHostMenu(linkGroup)">Create new group with…</a>
-                                    <select v-if="linkGroup.showHostMenu" @change="createNewGroupWithHost(linkGroup, $event)" @blur="hideHostMenu(linkGroup)">
-                                        <option value="" disabled selected>Select host…</option>
-                                        <option v-for="host in uniqueHosts(linkGroup.links)" :value="host">{{ host }}</option>
-                                    </select>
-                                </span>
-                                <span class="move-matching-action">
-                                    <a @click="openMoveMatching(linkGroup)">Move matching...</a>
-                                </span>
+            <main v-if="!needLogin && links.length > 0" ref="mainEl">
+                <div :style="{ height: totalHeight + 'px', position: 'relative' }">
+                    <div
+                        v-for="item in visibleGroups"
+                        :key="item.group.linkGroup.id"
+                        class="link-group"
+                        :data-group-id="String(item.group.linkGroup.id)"
+                        :style="{ position: 'absolute', top: 0, left: 0, right: 0, transform: 'translateY(' + item.offset + 'px)' }"
+                    >
+                        <div class="link-group-header">
+                            <div class="title" v-if="item.group.linkGroup.title" @click="renameLinkGroup(item.group.linkGroup)">{{ item.group.linkGroup.title }}</div>
+                            <div class="count" @click="renameLinkGroup(item.group.linkGroup)">{{ item.group.links.length }} Links</div>
+                            <div>
+                                <div class="creation-datetime">Created {{ momentDateTime(item.group.linkGroup.created_at) }}</div>
+                                <div class="actions">
+                                    <a @click="openAllInGroup(item.group)">Restore All</a>
+                                    <a @click="deleteAllInGroup(item.group)">Delete All</a>
+                                    <a @click="copyAllInGroupToClipboard(item.group)">Copy All To Clipboard</a>
+                                    <a @click="openMergeModal(item.group)" title="Merge other groups into this one">Merge…</a>
+                                    <span class="host-group-action">
+                                        <a @click="toggleHostMenu(item.group)">Create new group with…</a>
+                                        <select v-if="item.group.showHostMenu" @change="createNewGroupWithHost(item.group, $event)" @blur="hideHostMenu(item.group)">
+                                            <option value="" disabled selected>Select host…</option>
+                                            <option v-for="host in uniqueHosts(item.group.links)" :value="host">{{ host }}</option>
+                                        </select>
+                                    </span>
+                                    <span class="move-matching-action">
+                                        <a @click="openMoveMatching(item.group)">Move matching...</a>
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="drag-box" @dragover.prevent @drop="onDrop(linkGroup, $event)">
-                        <div v-for="link in linkGroup.links" class="link-holder" draggable="true" @dragstart="onDrag(link, $event)">
-                            <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
-                            <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
-                            <a :href="link.link" target="_blank" @click="deleteLink(link.id)">
-                                <span v-if="link.title && link.title !== link.link">{{ link.title }} <span class="link-url-wrapper"><span class="link-url">{{ link.link }}</span></span></span>
-                                <span v-else-if="link.title">{{ link.title }}</span>
-                                <span v-else>{{ link.link }}</span>
-                            </a>
+                        <div class="drag-box" @dragover.prevent @drop="onDrop(item.group, $event)">
+                            <div v-for="link in item.group.links" :key="link.id" class="link-holder" draggable="true" @dragstart="onDrag(link, $event)">
+                                <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
+                                <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
+                                <a :href="link.link" target="_blank" @click="deleteLink(link.id)">
+                                    <span v-if="link.title && link.title !== link.link">{{ link.title }} <span class="link-url-wrapper"><span class="link-url">{{ link.link }}</span></span></span>
+                                    <span v-else-if="link.title">{{ link.title }}</span>
+                                    <span v-else>{{ link.link }}</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -332,7 +350,13 @@ var app = new Vue({
     generatingAPIKey: false
         ,
             mergeModal: { targetGroupId: null, selectedSourceIds: [], mode: 'intoTarget', selectedDestId: null },
-        moveMatching: { sourceGroupId: null, host: '', hosts: [], selectedTargetId: null }
+        moveMatching: { sourceGroupId: null, host: '', hosts: [], selectedTargetId: null },
+        searchQuery: '',
+        searchField: 'all',
+        scrollTop: 0,
+        viewportHeight: window.innerHeight,
+        mainStart: 0,
+        measuredHeights: {}
     },
     computed: {
         links() {
@@ -368,9 +392,106 @@ var app = new Vue({
         },
         canConfirmMoveMatching() {
             return !!this.moveMatching.host && !!this.moveMatching.selectedTargetId
+        },
+        filteredLinkCount() {
+            return this.filteredLinks.reduce((sum, g) => sum + g.links.length, 0)
+        },
+        filteredLinks() {
+            if (!this.searchQuery.trim()) return this.links
+            const q = this.searchQuery.trim().toLowerCase()
+            const field = this.searchField
+            return this.links.reduce((acc, g) => {
+                const groupTitle = (g.linkGroup.title || '').toLowerCase()
+                const groupTitleMatch = (field === 'all' || field === 'groupTitle') && groupTitle.includes(q)
+                const matchingLinks = (field === 'all' || field === 'linkTitle' || field === 'url')
+                    ? g.links.filter(l =>
+                        (field === 'all' || field === 'linkTitle') && (l.title || '').toLowerCase().includes(q) ||
+                        (field === 'all' || field === 'url') && (l.link || '').toLowerCase().includes(q)
+                    )
+                    : []
+                if (groupTitleMatch || matchingLinks.length > 0) {
+                    acc.push(groupTitleMatch && matchingLinks.length === g.links.length
+                        ? g
+                        : { linkGroup: g.linkGroup, links: groupTitleMatch ? g.links : matchingLinks, showHostMenu: g.showHostMenu }
+                    )
+                }
+                return acc
+            }, [])
+        },
+        groupHeights() {
+            return this.filteredLinks.map(g => {
+                const id = String(g.linkGroup.id)
+                if (this.measuredHeights[id] !== undefined) return this.measuredHeights[id]
+                return 90 + g.links.length * 28 + 32
+            })
+        },
+        groupOffsets() {
+            const offsets = []
+            let acc = 0
+            this.groupHeights.forEach(h => { offsets.push(acc); acc += h })
+            return offsets
+        },
+        totalHeight() {
+            if (!this.filteredLinks.length) return 0
+            const n = this.filteredLinks.length
+            return this.groupOffsets[n - 1] + this.groupHeights[n - 1]
+        },
+        visibleGroups() {
+            const overscan = 300
+            const viewTop = this.scrollTop - this.mainStart - overscan
+            const viewBottom = this.scrollTop - this.mainStart + this.viewportHeight + overscan
+            return this.filteredLinks.reduce((acc, group, i) => {
+                const top = this.groupOffsets[i]
+                const bottom = top + this.groupHeights[i]
+                if (bottom > viewTop && top < viewBottom) acc.push({ group, offset: top })
+                return acc
+            }, [])
         }
     },
+    mounted() {
+        this._onScroll = () => {
+            if (!this._scrollRAF) {
+                this._scrollRAF = requestAnimationFrame(() => {
+                    this.scrollTop = window.scrollY
+                    this._scrollRAF = null
+                })
+            }
+        }
+        this._onResize = () => {
+            this.viewportHeight = window.innerHeight
+            this.updateMainStart()
+        }
+        window.addEventListener('scroll', this._onScroll, { passive: true })
+        window.addEventListener('resize', this._onResize, { passive: true })
+        this.$nextTick(() => {
+            this.updateMainStart()
+            this.measureGroupHeights()
+        })
+    },
+    updated() {
+        this.$nextTick(() => {
+            this.updateMainStart()
+            this.measureGroupHeights()
+        })
+    },
+    beforeDestroy() {
+        window.removeEventListener('scroll', this._onScroll)
+        window.removeEventListener('resize', this._onResize)
+    },
     methods: {
+        updateMainStart() {
+            if (this.$refs.mainEl) {
+                this.mainStart = this.$refs.mainEl.getBoundingClientRect().top + window.scrollY
+            }
+        },
+        measureGroupHeights() {
+            if (!this.$refs.mainEl) return
+            this.$refs.mainEl.querySelectorAll('[data-group-id]').forEach(el => {
+                const id = el.getAttribute('data-group-id')
+                const h = el.offsetHeight + 32 // offsetHeight + margin-bottom (2em ≈ 32px)
+                if (this.measuredHeights[id] !== h) this.$set(this.measuredHeights, id, h)
+            })
+        },
         deleteLink(id) {
             deleteLink(id)
         },
