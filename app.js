@@ -54,7 +54,6 @@ wss.on('connection', client => {
             var authToken = receivedJSON.authToken
             var method = receivedJSON.method
             var payload = receivedJSON.payload
-            var requestId = receivedJSON.requestId
             const user = checkAuth(authToken)
             if(user) {
                 const userId = user.id
@@ -82,11 +81,11 @@ wss.on('connection', client => {
                             break
                         case 'add-link':
                             winston.info({ method: 'add-link', payload: payload, client: client.id })
-                            addLink(payload, userId, requestId)
+                            addLink(payload, userId)
                             break
                         case 'add-links':
                             winston.info({ method: 'add-links', payload: payload, client: client.id })
-                            addLinks(payload, userId, requestId)
+                            addLinks(payload, userId)
                             break
                         case 'delete-link':
                             winston.info({ method: 'delete-link', payload: payload, client: client.id })
@@ -115,9 +114,9 @@ wss.on('connection', client => {
                     }
                 }
             } else {
-                if(method && payload) {
+                if(method && typeof payload !== 'undefined') {
                     client.sendJSON({ event: 'need-valid-token', payload: { method: method, payload: payload } })
-                } else if(method && !payload) {
+                } else if(method) {
                     client.sendJSON({ event: 'need-valid-token', payload: { method: method } })
                 } else {
                     client.sendJSON({ event: 'need-valid-token' })
@@ -202,7 +201,7 @@ function getLinks(client, userId) {
 }
 
 // payload == linkObject { title: title, link: link }
-async function addLink(payload, userId, requestId = null) {
+async function addLink(payload, userId) {
     if(!userId) {
         throw new Error('userId required')
     }
@@ -233,7 +232,7 @@ async function addLink(payload, userId, requestId = null) {
         await db.none('INSERT INTO links(title, link, link_group_id, user_id) VALUES ($1, $2, $3, $4)', [payload.title, payload.link, linkGroupId, userId])
         if (authenticatedClients[userId]) {
             authenticatedClients[userId].forEach(client => {
-                client.sendJSON({ event: 'link-added', payload: requestId ? { requestId } : undefined })
+                client.sendJSON({ event: 'link-added' })
             })
         }
     } catch(error) {
@@ -242,7 +241,7 @@ async function addLink(payload, userId, requestId = null) {
 }
 
 // payload == linkObject Array
-async function addLinks(payload, userId, requestId = null) {
+async function addLinks(payload, userId) {
     if(!userId) {
         throw new Error('userId required')
     }
@@ -254,7 +253,7 @@ async function addLinks(payload, userId, requestId = null) {
         }
         if (authenticatedClients[userId]) {
             authenticatedClients[userId].forEach(client => {
-                client.sendJSON({ event: 'links-added', payload: requestId ? { requestId } : undefined })
+                client.sendJSON({ event: 'links-added' })
             })
         }
     } catch(error) {
@@ -458,6 +457,16 @@ function checkAuthMiddleware(req, res, next) {
     next()
 }
 
+function requireAuthToken(req, res, next) {
+    if(!checkAuth(req.header('authToken'), req.body)) {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication failed'
+        })
+    }
+    next()
+}
+
 var apiKeyRoutes = require('./routes/api-key')
 app.use('/api-key', checkAuthMiddleware, apiKeyRoutes)
 
@@ -489,6 +498,38 @@ app.post('/add-link', async(req, res, next) => {
             res.send('Invalid API Key or Username')
         }
         next()
+    } catch(error) {
+        next(error)
+    }
+})
+
+app.post('/extension/add-link', requireAuthToken, async(req, res, next) => {
+    try {
+        if(req.body.title && req.body.link) {
+            await addLink(req.body, req.body.authUser.id)
+            return res.json({ success: true })
+        }
+
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid link format'
+        })
+    } catch(error) {
+        next(error)
+    }
+})
+
+app.post('/extension/add-links', requireAuthToken, async(req, res, next) => {
+    try {
+        if(Array.isArray(req.body.links) && req.body.links.length > 0) {
+            await addLinks(req.body.links, req.body.authUser.id)
+            return res.json({ success: true })
+        }
+
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid links format'
+        })
     } catch(error) {
         next(error)
     }
