@@ -55,6 +55,7 @@ function onReceiveLinks(payload) {
     app.$store.commit('updateNeedLogin', false)
     app.$store.commit('updateLinks', payload.linkGroups)
     app.$store.commit('updateLinkCount', payload.linkCount)
+    app.loadFavicons(payload.linkGroups)
 }
 
 // payload == { method, payload }
@@ -119,6 +120,49 @@ function mergeGroups(targetGroupId, sourceGroupIds) {
 
 function OnWebSocketOpen() {
     getLinks()
+}
+
+function getHostname(url) {
+    try { return new URL(url).hostname } catch(e) { return url }
+}
+
+function openFaviconDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('linkbox-favicons', 1)
+        req.onupgradeneeded = e => {
+            e.target.result.createObjectStore('favicons')
+        }
+        req.onsuccess = e => resolve(e.target.result)
+        req.onerror = () => reject(req.error)
+    })
+}
+
+function idbPut(db, key, value) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('favicons', 'readwrite')
+        const req = tx.objectStore('favicons').put(value, key)
+        req.onsuccess = () => resolve()
+        req.onerror = () => reject(req.error)
+    })
+}
+
+function idbGetAll(db) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('favicons', 'readonly')
+        const store = tx.objectStore('favicons')
+        const results = {}
+        const req = store.openCursor()
+        req.onsuccess = e => {
+            const cursor = e.target.result
+            if (cursor) {
+                results[cursor.key] = cursor.value
+                cursor.continue()
+            } else {
+                resolve(results)
+            }
+        }
+        req.onerror = () => reject(req.error)
+    })
 }
 
 function createGroupWithLinks(linkIds, title = null) {
@@ -214,7 +258,7 @@ var app = new Vue({
                         <div class="drag-box" @dragover.prevent @drop="onDrop(item.group, $event)">
                             <div v-for="link in item.group.links" :key="link.id" class="link-holder" draggable="true" @dragstart="onDrag(link, $event)">
                                 <img src="images/cross.png" @click="deleteLink(link.id)" class="delete-link">
-                                <img :src="'https://www.google.com/s2/favicons?domain=' + link.link" class="favicon">
+                                <img :src="faviconDataUrls[hostname(link.link)]" class="favicon">
                                 <a :href="link.link" target="_blank" @click="deleteLink(link.id)">
                                     <span v-if="link.title && link.title !== link.link">{{ link.title }} <span class="link-url-wrapper"><span class="link-url">{{ link.link }}</span></span></span>
                                     <span v-else-if="link.title">{{ link.title }}</span>
@@ -356,7 +400,9 @@ var app = new Vue({
         scrollTop: 0,
         viewportHeight: window.innerHeight,
         mainStart: 0,
-        measuredHeights: {}
+        measuredHeights: {},
+        faviconDb: null,
+        faviconDataUrls: {}
     },
     computed: {
         links() {
@@ -463,6 +509,7 @@ var app = new Vue({
         }
         window.addEventListener('scroll', this._onScroll, { passive: true })
         window.addEventListener('resize', this._onResize, { passive: true })
+        this.initFaviconDB()
         this.$nextTick(() => {
             this.updateMainStart()
             this.measureGroupHeights()
@@ -491,6 +538,38 @@ var app = new Vue({
                 const h = el.offsetHeight + 32 // offsetHeight + margin-bottom (2em ≈ 32px)
                 if (this.measuredHeights[id] !== h) this.$set(this.measuredHeights, id, h)
             })
+        },
+        async initFaviconDB() {
+            const db = await openFaviconDB()
+            this.faviconDb = db
+            const all = await idbGetAll(db)
+            Object.keys(all).forEach(hostname => {
+                this.$set(this.faviconDataUrls, hostname, URL.createObjectURL(all[hostname]))
+            })
+        },
+        hostname(url) {
+            return getHostname(url)
+        },
+        async loadFavicons(linkGroups) {
+            if (!this.faviconDb) return
+            const hostnames = new Set()
+            linkGroups.forEach(g => {
+                g.links.forEach(l => {
+                    const h = getHostname(l.link)
+                    if (h && !this.faviconDataUrls[h]) hostnames.add(h)
+                })
+            })
+            const db = this.faviconDb
+            await Promise.all([...hostnames].map(async hostname => {
+                try {
+                    const res = await fetch(`/favicon-proxy?hostname=${encodeURIComponent(hostname)}`)
+                    if (res.ok) {
+                        const blob = await res.blob()
+                        await idbPut(db, hostname, blob)
+                        this.$set(this.faviconDataUrls, hostname, URL.createObjectURL(blob))
+                    }
+                } catch(e) { /* silently ignore network errors */ }
+            }))
         },
         deleteLink(id) {
             deleteLink(id)

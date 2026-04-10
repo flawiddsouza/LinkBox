@@ -132,6 +132,8 @@ header .search-field-select:focus {
 .link-holder .favicon {
     margin-right: 0.7em;
     vertical-align: middle;
+    width: 16px;
+    height: 16px;
 }
 
 .link-holder .link-url-wrapper {

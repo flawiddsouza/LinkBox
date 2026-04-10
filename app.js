@@ -27,6 +27,23 @@ app.use(bodyParser.urlencoded({ extended: true }))
 var auth = require('./routes/auth')
 app.use('/', auth)
 
+app.get('/favicon-proxy', checkAuthMiddleware, async (req, res) => {
+    const hostname = req.query.hostname
+    if (!hostname || !/^[a-zA-Z0-9._-]+$/.test(hostname)) {
+        return res.status(400).send('Invalid hostname')
+    }
+    try {
+        const upstream = await fetch(`https://www.google.com/s2/favicons?domain=${hostname}`)
+        const buffer = await upstream.arrayBuffer()
+        const contentType = upstream.headers.get('content-type') || 'image/png'
+        res.set('Content-Type', contentType)
+        res.set('Cache-Control', 'public, max-age=604800')
+        res.send(Buffer.from(buffer))
+    } catch (e) {
+        res.status(502).send('Failed to fetch favicon')
+    }
+})
+
 const jwt = require('jsonwebtoken')
 
 var authenticatedClients = {}
