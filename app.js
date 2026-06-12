@@ -466,7 +466,7 @@ async function moveLinks(payload, client, userId) {
 
 function checkAuthMiddleware(req, res, next) {
     if(!checkAuth(req.header('authToken'), req.body)) {
-        return res.json({
+        return res.status(401).json({
             success: false,
             message: 'Authentication failed'
         })

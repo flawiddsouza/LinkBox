@@ -146,6 +146,15 @@ function idbPut(db, key, value) {
     })
 }
 
+function idbDelete(db, key) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('favicons', 'readwrite')
+        const req = tx.objectStore('favicons').delete(key)
+        req.onsuccess = () => resolve()
+        req.onerror = () => reject(req.error)
+    })
+}
+
 function idbGetAll(db) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('favicons', 'readonly')
@@ -402,6 +411,7 @@ var app = new Vue({
         mainStart: 0,
         measuredHeights: {},
         faviconDb: null,
+        faviconDbReady: null,
         faviconDataUrls: {}
     },
     computed: {
@@ -509,7 +519,7 @@ var app = new Vue({
         }
         window.addEventListener('scroll', this._onScroll, { passive: true })
         window.addEventListener('resize', this._onResize, { passive: true })
-        this.initFaviconDB()
+        if (!this.faviconDbReady) this.faviconDbReady = this.initFaviconDB()
         this.$nextTick(() => {
             this.updateMainStart()
             this.measureGroupHeights()
@@ -540,18 +550,26 @@ var app = new Vue({
             })
         },
         async initFaviconDB() {
-            const db = await openFaviconDB()
-            this.faviconDb = db
-            const all = await idbGetAll(db)
-            Object.keys(all).forEach(hostname => {
-                this.$set(this.faviconDataUrls, hostname, URL.createObjectURL(all[hostname]))
-            })
+            try {
+                const db = await openFaviconDB()
+                this.faviconDb = db
+                const all = await idbGetAll(db)
+                Object.keys(all).forEach(hostname => {
+                    const blob = all[hostname]
+                    if (blob && blob.type.startsWith('image/')) {
+                        this.$set(this.faviconDataUrls, hostname, URL.createObjectURL(blob))
+                    } else {
+                        idbDelete(db, hostname) // purge poisoned non-image entry so loadFavicons re-fetches it
+                    }
+                })
+            } catch(e) { /* IndexedDB unavailable (private mode, quota) - fall back to fetching without cache */ }
         },
         hostname(url) {
             return getHostname(url)
         },
         async loadFavicons(linkGroups) {
-            if (!this.faviconDb) return
+            if (!this.faviconDbReady) this.faviconDbReady = this.initFaviconDB()
+            await this.faviconDbReady
             const hostnames = new Set()
             linkGroups.forEach(g => {
                 g.links.forEach(l => {
@@ -560,12 +578,15 @@ var app = new Vue({
                 })
             })
             const db = this.faviconDb
+            const authToken = localStorage.getItem('authToken')
             await Promise.all([...hostnames].map(async hostname => {
                 try {
-                    const res = await fetch(`/favicon-proxy?hostname=${encodeURIComponent(hostname)}`)
+                    const res = await fetch(`/favicon-proxy?hostname=${encodeURIComponent(hostname)}`, {
+                        headers: { 'authToken': authToken }
+                    })
                     if (res.ok) {
                         const blob = await res.blob()
-                        await idbPut(db, hostname, blob)
+                        if (db) await idbPut(db, hostname, blob)
                         this.$set(this.faviconDataUrls, hostname, URL.createObjectURL(blob))
                     }
                 } catch(e) { /* silently ignore network errors */ }
